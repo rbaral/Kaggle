@@ -1,0 +1,17 @@
+1) Split the training set into train and validation set
+2) find the rss using different models
+3) choose the model with least rss
+
+
+https://www.kaggle.com/c/data-science-london-scikit-learn/submissions
+
+sgd: 0.73987
+svm: 0.91324
+knn: 0.89645
+logistic regression: 0.80035 (l2 penalty); 0.80209(l1 penalty)
+majority voting: 0.85228
+majority voting without sgd: 0.90120
+
+svc with params: 0.89661 (148th place)
+
+svc with params using cross validation: 0.92305 (98th place)
