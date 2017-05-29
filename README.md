@@ -1,6 +1,6 @@
-# kaggle
+# Kaggle Projects
 
-this includes some kaggle projects I worked on for fun
+this includes some Kaggle projects I worked on for fun
 
 Projects:
 
