@@ -16,4 +16,8 @@ Projects:
 
 6) AllState insurance claims severity: https://www.kaggle.com/c/allstate-claims-severity
 
+7) Web Traffice Time Series Forecasting: https://www.kaggle.com/c/web-traffic-time-series-forecasting/data
+
+8) Instacart Market Basket Analysis: https://www.kaggle.com/c/instacart-market-basket-analysis
+
 Others are on the way. Stay tuned!
