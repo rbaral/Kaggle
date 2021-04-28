@@ -1,0 +1,8 @@
+Logistic Regression: score 0.75598 (4833/5774)
+Random Forest: score 0.75598 (4832/5774)
+
+SVC: score 0.62201 (4833/5774)
+
+majority voting: score 0.72727 (4832/5774)
+
+GrahmC SVM: score 0.80861 (512/5774)
