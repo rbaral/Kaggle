@@ -1,6 +1,6 @@
 # Kaggle Projects
 
-this respository contains some Kaggle projects I worked for fun
+This respository contains some Kaggle projects that I worked for fun. For the resources borrowed from the Internet, I have tried my best to credit the original authors.
 
 Projects:
 
