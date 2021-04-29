@@ -8,6 +8,7 @@ import pandas as pd  # data processing, CSV file I/O (e.g. pd.read_csv)
 from sklearn import preprocessing
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from collections import defaultdict, Counter
 import zipfile
 
@@ -47,7 +48,21 @@ item_cols = ['ncodpers', 'ind_ahor_fin_ult1', 'ind_aval_fin_ult1', 'ind_cco_fin_
            'ind_nomina_ult1', 'ind_nom_pens_ult1', 'ind_recibo_ult1']
 
 #user related features
-user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente", "renta", "antiguedad", "segmento", "indrel_1mes", "ind_empleado", "nomprov", "conyuemp"]#"indrel_1mes", "ind_empleado", "nomprov", "conyuemp"]#,
+user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente", "renta", "antiguedad", "segmento", "indrel_1mes", "ind_empleado", "nomprov"]#, "conyuemp"]#,
+
+#feature weights
+weights = {"age":1.0,
+           "ind_nuevo":1.0,
+           "sexo":1.0,
+           "tiprel_1mes":1.0,
+           "ind_actividad_cliente":1.0,
+           "renta":1.0,
+           "antiguedad":1.0,
+           "segmento":1.0,
+           "indrel_1mes":1.0,
+           "ind_empleado":1.0,
+           "nomprov":1.0}
+
 
 def label_encode(df, colname):
     df_dummies = pd.get_dummies(df[colname], prefix=colname+"_")
@@ -153,7 +168,7 @@ def get_data_training():
     #province name
     if "nomprov" in df_train.columns:
         print("nomprov values ", Counter(df_train["nomprov"].values))
-        df_train.fillna({"nomprov": " "}, inplace=True)
+        df_train.fillna({"nomprov": "MADRID"}, inplace=True)
         df_train = label_encode(df_train, "nomprov")
 
     #spouse index
@@ -177,7 +192,6 @@ def predict_feature_prob(ids):
     models = {}
     model_preds = {}
     id_preds = defaultdict(list)
-    feature_index = 0
     for feature_index, feature in enumerate(item_cols[1:]):
         #don't take the user id and user features as label to predict
         y_train = df_train[feature]
@@ -185,6 +199,7 @@ def predict_feature_prob(ids):
         x_train = df_train.drop([feature, 'ncodpers'], axis=1)
         # train model for this feature as label
         clf = LogisticRegression(max_iter=1000)
+        #clf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
         clf.fit(x_train, y_train)
         model_predict_prob = clf.predict_proba(x_train)
         p_train = model_predict_prob[:, 1]
