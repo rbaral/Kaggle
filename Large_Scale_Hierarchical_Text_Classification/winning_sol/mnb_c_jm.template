@@ -1,0 +1,31 @@
+max_procs 4
+nfold 5
+run_cmd java -Xmx2000M SGM_Tests
+scheduler 
+score 0.958
+score_cmd tail #OUTFILE# | grep Results: | tr ' ' '\n' | grep miFscore | tr ":" "\n" | tail -n 1
+task_check 
+test_time 1.658
+time_cmd grep 'Time:' #OUTFILE# | tail -n 2
+train_time 2.2488
+username asp12
+#
+use_tfidf 0
+max_retrieved 1
+test_file dry_dev.txt
+train_file dry_train.txt
+workdir /research/antti/single_label/r8
+#
+batch_size 10000000.0 10000000.0 10000000.0 0.0 F=
+cond_hashsize 10000000.0 15000000.0 15000000.0 0.0 F=
+idf_lift 0.0 1.0 50.0 0.00317524282221 F=
+length_scale 0.0 -1.0 5.0 0.000222266997555 F=
+prune_count_insert -5000.0 -6.0 -50.0 22.0 F=
+#
+bg_unif_smooth 0.0 0.0 1.0 0.0 F=
+jelinek_mercer 0.0 0.0 1.0 0.0 F
+dirichlet_prior 0.0 0.0 0.5 0.0 F=
+absolute_discount 0.0 0.0 0.5 0.0 F=
+powerlaw_discount 0.0 0.0 1.0 0.0 F=
+prior_scale 1.0 0.0 1.0 0.0 F=
+prune_count_table -10000000.0 -2.0 -8.0 0.000793810705553 F=
