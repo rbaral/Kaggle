@@ -47,7 +47,7 @@ item_cols = ['ncodpers', 'ind_ahor_fin_ult1', 'ind_aval_fin_ult1', 'ind_cco_fin_
            'ind_nomina_ult1', 'ind_nom_pens_ult1', 'ind_recibo_ult1']
 
 #user related features
-user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente", "renta", "antiguedad", "segmento"]#"indrel_1mes", "ind_empleado", "nomprov", "conyuemp"]#,
+user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente", "renta", "antiguedad", "segmento", "indrel_1mes", "ind_empleado", "nomprov", "conyuemp"]#"indrel_1mes", "ind_empleado", "nomprov", "conyuemp"]#,
 
 def label_encode(df, colname):
     df_dummies = pd.get_dummies(df[colname], prefix=colname+"_")
@@ -213,7 +213,7 @@ def get_used_features():
     for row in df_train.values:
         row = list(row)
         id = row.pop(0)
-        active = [c[0] for c in zip(item_cols[1:], row) if c[1] > 0]
+        active = [c[0] for c in zip(df_train.columns[1:], row) if (c[0] in item_cols and c[1] > 0)]
         if id not in used_features:
             used_features[id] = []
         used_features[id].extend(active)
