@@ -9,6 +9,7 @@ from sklearn import preprocessing
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+import xgboost as xgb
 from collections import defaultdict, Counter
 import zipfile
 
@@ -51,21 +52,24 @@ item_cols = ['ncodpers', 'ind_ahor_fin_ult1', 'ind_aval_fin_ult1', 'ind_cco_fin_
 user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente", "renta", "antiguedad", "segmento", "indrel_1mes", "ind_empleado", "nomprov"]#, "conyuemp"]#,
 
 #feature weights
-weights = {"age":1.0,
-           "ind_nuevo":1.0,
+feature_weights = {"age":1.0,
+           "ind_nuevo":0.5,
            "sexo":1.0,
            "tiprel_1mes":1.0,
            "ind_actividad_cliente":1.0,
            "renta":1.0,
-           "antiguedad":1.0,
+           "antiguedad":0.5,
            "segmento":1.0,
-           "indrel_1mes":1.0,
+           "indrel_1mes":0.5,
            "ind_empleado":1.0,
-           "nomprov":1.0}
+           "nomprov":0.25}
 
 
-def label_encode(df, colname):
+def label_encode(df, colname, weight=1.0):
     df_dummies = pd.get_dummies(df[colname], prefix=colname+"_")
+    #add the feature weights
+    for col in df_dummies.columns:
+        df_dummies[col] = df_dummies[col]*weight
     df = pd.concat([df, df_dummies], axis=1)
     df.drop([colname], inplace=True, axis=1)
     return df
@@ -80,24 +84,25 @@ def get_data_training():
     usecols = item_cols + user_features
     print("using cols: ",usecols)
     df_train = pd.read_csv(train_file, usecols=usecols)
-    #df_train_1 = df_train.drop_duplicates(['ncodpers'], keep='first')
-    df_train = df_train.drop_duplicates(['ncodpers'], keep='last')
-    #df_train = pd.concat([df_train_1, df_train_2])
-    #df_train = df_train.drop_duplicates(['ncodpers'], keep='last')
-
     #df_train = df_train.drop_duplicates()
+
+    df_train = df_train.drop_duplicates(['ncodpers'], keep='last')
+
+    #df_train_1 = df_train.drop_duplicates(['ncodpers'], keep='first')
+    #df_train_2 = df_train.drop_duplicates(['ncodpers'], keep='last')
+    #df_train = pd.concat([df_train_1, df_train_2])
 
     #ind_empleado Employee index: A active, B ex employed, F filial, N not employee, P pasive
     if "ind_empleado" in df_train.columns:
         #print("ind_empleado values ", Counter(df_train["ind_empleado"].values))
         df_train.fillna({"ind_empleado": "N"}, inplace=True)
-        df_train = label_encode(df_train, "ind_empleado")
+        df_train = label_encode(df_train, "ind_empleado", weight=feature_weights["ind_empleado"])
 
     #for gender use V as default
     if "sexo" in df_train.columns:
         #print("gender values ", Counter(df_train["sexo"].values))
         df_train.fillna({"sexo":"V"}, inplace=True)
-        df_train = label_encode(df_train, "sexo")
+        df_train = label_encode(df_train, "sexo", weight=feature_weights["sexo"])
 
     #age
     if "age" in df_train.columns:
@@ -109,24 +114,30 @@ def get_data_training():
         # now normalize the values
         min_max_scaler = preprocessing.MinMaxScaler()
         df_train[["age"]] = min_max_scaler.fit_transform(df_train[["age"]])
+        df_train["age"] = df_train["age"]*feature_weights["age"]
 
     # for ind_nuevo use 1 as default; New customer Index. 1 if the customer registered in the last 6 months.
     if "ind_nuevo" in df_train.columns:
         #print("ind_nuevo values ", Counter(df_train["ind_nuevo"].values))
-        df_train.fillna({"ind_nuevo": "1"}, inplace=True)
+        df_train.fillna({"ind_nuevo": "1.0"}, inplace=True)
+        df_train["ind_nuevo"] = df_train["ind_nuevo"].astype(float)
+        df_train['ind_nuevo']= df_train['ind_nuevo']*[feature_weights["ind_nuevo"]]
 
     #for tiprel_1mes, use I as default; Customer relation type at the beginning of the month, A (active), I (inactive), P (former customer),R (Potential)
     if "tiprel_1mes" in df_train.columns:
         #print("tiprel_1mes values ", Counter(df_train["tiprel_1mes"].values))
         df_train.fillna({"tiprel_1mes":"I"}, inplace=True)
-        df_train = label_encode(df_train, "tiprel_1mes")
+        df_train = label_encode(df_train, "tiprel_1mes", weight=feature_weights["tiprel_1mes"])
 
     #indrel_1mes Customer type at the beginning of the month ,1 (First/Primary customer), 2 (co-owner ),P (Potential),3 (former primary), 4(former co-owner)
-    # for indrel_1mes, use I as default
+    # for indrel_1mes, use 1.0 as default
     if "indrel_1mes" in df_train.columns:
+        df_train.fillna({"indrel_1mes": "1.0"}, inplace=True)
+        # there are duplicate type values, e.g., 2.0 as number and '2' as string
+        for i in range(4):
+            df_train["indrel_1mes"] = df_train["indrel_1mes"].apply(lambda x: str(float(i+1)) if (x==float(i+1) or x==(i+1) or x==str(i+1)) else x)
         #print("indrel_1mes values ", Counter(df_train["indrel_1mes"].values))
-        df_train.fillna({"indrel_1mes": "I"}, inplace=True)
-        df_train = label_encode(df_train, "indrel_1mes")
+        df_train = label_encode(df_train, "indrel_1mes", weight=feature_weights["indrel_1mes"])
 
     #customers seniority in months
     if "antiguedad" in df_train.columns:
@@ -140,6 +151,7 @@ def get_data_training():
         # now normalize the values
         min_max_scaler = preprocessing.MinMaxScaler()
         df_train[["antiguedad"]] = min_max_scaler.fit_transform(df_train[["antiguedad"]])
+        df_train.loc[:, 'antiguedad'] *= feature_weights["antiguedad"]
 
     #gross income
     if "renta" in df_train.columns:
@@ -148,40 +160,69 @@ def get_data_training():
         #now normalize the values
         min_max_scaler = preprocessing.MinMaxScaler()
         df_train[["renta"]] = min_max_scaler.fit_transform(df_train[["renta"]])
+        df_train.loc[:, 'renta'] *= feature_weights["renta"]
 
     # customer primary for the month or not
     if "indrel" in df_train.columns:
         # print("indrel values ", Counter(df_train["indrel"].values))
         df_train.fillna({"indrel": 0}, inplace=True)
+        df_train["indrel"] = df_train["indrel"].astype(float)
+        df_train.loc[:, 'indrel'] *= feature_weights["indrel"]
 
     # active or not
     if "ind_actividad_cliente" in df_train.columns:
         # print("ind_actividad_cliente values ", Counter(df_train["ind_actividad_cliente"].values))
         df_train.fillna({"ind_actividad_cliente": 0}, inplace=True)
+        df_train["ind_actividad_cliente"] = df_train["ind_actividad_cliente"].astype(float)
+        df_train.loc[:, 'ind_actividad_cliente'] *= feature_weights["ind_actividad_cliente"]
 
     #segmentation: 01 - VIP, 02 - Individuals 03 - college graduated
     if "segmento" in df_train.columns:
         print("segmento values ", Counter(df_train["segmento"].values))
-        df_train.fillna({"segmento": "03"}, inplace=True)
-        df_train = label_encode(df_train, "segmento")
+        df_train.fillna({"segmento": "02"}, inplace=True)
+        df_train = label_encode(df_train, "segmento", weight=feature_weights["segmento"])
 
     #province name
     if "nomprov" in df_train.columns:
         print("nomprov values ", Counter(df_train["nomprov"].values))
         df_train.fillna({"nomprov": "MADRID"}, inplace=True)
-        df_train = label_encode(df_train, "nomprov")
+        df_train = label_encode(df_train, "nomprov", weight=feature_weights["nomprov"])
 
     #spouse index
     if "conyuemp" in df_train.columns:
         print("conyuemp values ", Counter(df_train["conyuemp"].values))
         df_train.fillna({"conyuemp": " "}, inplace=True)
-        df_train = label_encode(df_train, "conyuemp")
+        df_train = label_encode(df_train, "conyuemp", weight=feature_weights["conyuemp"])
 
 
     #for the rest fill missing values with 0
     df_train.fillna(0, inplace=True)
-    print(df_train.head(10))
     return df_train
+
+
+def predict_from_xgb(x_train, y_train):
+    # specify parameters via map
+    param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
+    model = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
+    model.fit(x_train, y_train)
+    # make prediction
+    data_dmatrix = xgb.DMatrix(data=x_train, label=y_train)
+    preds = model.predict_proba(x_train)
+    return preds
+
+
+def predict_from_logit(x_train, y_train):
+    clf = LogisticRegression(max_iter=1000)
+    clf.fit(x_train, y_train)
+    preds = clf.predict_proba(x_train)
+    return preds
+
+
+def predict_from_randomforest(x_train, y_train):
+    clf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
+    clf.fit(x_train, y_train)
+    preds = clf.predict_proba(x_train)
+    return preds
 
 
 def predict_feature_prob(ids):
@@ -189,7 +230,7 @@ def predict_feature_prob(ids):
     for each feature, take it as a label and predict it using other features' values
     """
     print("predicting feature probability")
-    models = {}
+    #models = {}
     model_preds = {}
     id_preds = defaultdict(list)
     for feature_index, feature in enumerate(item_cols[1:]):
@@ -197,20 +238,20 @@ def predict_feature_prob(ids):
         y_train = df_train[feature]
         # drop this feature along axis =1
         x_train = df_train.drop([feature, 'ncodpers'], axis=1)
+
         # train model for this feature as label
-        clf = LogisticRegression(max_iter=1000)
-        #clf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
-        clf.fit(x_train, y_train)
-        model_predict_prob = clf.predict_proba(x_train)
-        p_train = model_predict_prob[:, 1]
+        #clf = LogisticRegression(max_iter=1000)
+        #clf.fit(x_train, y_train)
+        #model_predict_prob = clf.predict_proba(x_train)
+        p_train = predict_from_xgb(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
         # accumulate the model and its prediction prob for each feature
-        models[feature] = clf
+        #models[feature] = clf
         model_preds[feature] = p_train
         # for every user, add the prediction on each feature
         for id, p in zip(ids, p_train):
             #if the feature already defined for this user, the average it
             if id in id_preds and len(id_preds[id])>=feature_index+1:
-                new_score = np.average(id_preds[id][feature_index], p)
+                new_score = np.average([id_preds[id][feature_index], p])
                 id_preds[id][feature_index] = new_score
             else:
                 id_preds[id].append(p)
@@ -256,9 +297,8 @@ def predict_user_items(id_preds, used_features, df_sample):
 
 df_train = get_data_training()
 
-print(df_train.dtypes)
-
-print(df_train.head(10))
+for col in df_train.columns:
+    print(col,"...",df_train[col].dtype)
 
 df_sample = pd.read_csv(sample_sub_file)
 ids = df_train['ncodpers'].values
