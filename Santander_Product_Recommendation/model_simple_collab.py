@@ -200,13 +200,31 @@ def get_data_training():
     return df_train
 
 
+def predict_from_ensemble(x_train, y_train):
+    model_logit = LogisticRegression(max_iter=1000)
+    model_rf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
+    param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
+    mode_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
+    #first level models
+    model_logit.fit(x_train, y_train)
+    model_rf.fit(x_train, y_train)
+    preds_logit = model_logit.predict_proba(x_train)
+    preds_rf = model_rf.predict_proba(x_train)
+    # use xgb in second layer
+    ens_train = np.concatenate((preds_logit, preds_rf), axis=1)
+    mode_xgb.fit(ens_train, y_train)
+    preds = mode_xgb.predict_proba(ens_train)
+    return preds
+
+
+
 def predict_from_xgb(x_train, y_train):
     # specify parameters via map
     param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
     model = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
     model.fit(x_train, y_train)
     # make prediction
-    data_dmatrix = xgb.DMatrix(data=x_train, label=y_train)
+    #data_dmatrix = xgb.DMatrix(data=x_train, label=y_train)
     preds = model.predict_proba(x_train)
     return preds
 
@@ -243,7 +261,7 @@ def predict_feature_prob(ids):
         #clf = LogisticRegression(max_iter=1000)
         #clf.fit(x_train, y_train)
         #model_predict_prob = clf.predict_proba(x_train)
-        p_train = predict_from_xgb(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
+        p_train = predict_from_logit(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
         # accumulate the model and its prediction prob for each feature
         #models[feature] = clf
         model_preds[feature] = p_train
