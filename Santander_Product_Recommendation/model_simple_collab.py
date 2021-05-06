@@ -217,7 +217,6 @@ def predict_from_ensemble(x_train, y_train):
     return preds
 
 
-
 def predict_from_xgb(x_train, y_train):
     # specify parameters via map
     param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
@@ -261,7 +260,7 @@ def predict_feature_prob(ids):
         #clf = LogisticRegression(max_iter=1000)
         #clf.fit(x_train, y_train)
         #model_predict_prob = clf.predict_proba(x_train)
-        p_train = predict_from_logit(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
+        p_train = predict_from_xgb(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
         # accumulate the model and its prediction prob for each feature
         #models[feature] = clf
         model_preds[feature] = p_train
