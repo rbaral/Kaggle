@@ -4,14 +4,17 @@ https://www.kaggle.com/anokas/collaborative-filtering-btb-lb-0-01691
 """
 import numpy as np
 import os
-import pandas as pd  # data processing, CSV file I/O (e.g. pd.read_csv)
+import pandas as pd
+import re
+from collections import defaultdict, Counter
+import zipfile
 from sklearn import preprocessing
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 import xgboost as xgb
-from collections import defaultdict, Counter
-import zipfile
+import lightgbm as lgb
+
 
 # constants
 DATA_DIR = "../../Kaggle_data/santander_product_recommendation"
@@ -204,16 +207,33 @@ def predict_from_ensemble(x_train, y_train):
     model_logit = LogisticRegression(max_iter=1000)
     model_rf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
     param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
-    mode_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
+    model_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
+    #lgb model
+    lgb_data = lgb.Dataset(x_train, label=y_train)
+    lgb_params = {'learning_rate': 0.001}
+    model_lgb = lgb.LGBMClassifier(**lgb_params)
+
     #first level models
     model_logit.fit(x_train, y_train)
     model_rf.fit(x_train, y_train)
+    model_lgb.fit(x_train, y_train)
+
     preds_logit = model_logit.predict_proba(x_train)
     preds_rf = model_rf.predict_proba(x_train)
+    preds_lgb = model_lgb.predict_proba(x_train)
+
     # use xgb in second layer
-    ens_train = np.concatenate((preds_logit, preds_rf), axis=1)
-    mode_xgb.fit(ens_train, y_train)
-    preds = mode_xgb.predict_proba(ens_train)
+    ens_train = np.concatenate((preds_logit, preds_rf, preds_lgb), axis=1)
+    model_xgb.fit(ens_train, y_train)
+    preds = model_xgb.predict_proba(ens_train)
+    return preds
+
+
+def predict_from_lightgbm(x_train, y_train):
+    lgb_params = {'learning_rate': 0.001}
+    model_lgb = lgb.LGBMClassifier(**lgb_params)
+    model_lgb.fit(x_train, y_train)
+    preds = model_lgb.predict_proba(x_train)
     return preds
 
 
@@ -260,7 +280,7 @@ def predict_feature_prob(ids):
         #clf = LogisticRegression(max_iter=1000)
         #clf.fit(x_train, y_train)
         #model_predict_prob = clf.predict_proba(x_train)
-        p_train = predict_from_xgb(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
+        p_train = predict_from_ensemble(x_train, y_train)[:, 1]#model_predict_prob[:, 1]
         # accumulate the model and its prediction prob for each feature
         #models[feature] = clf
         model_preds[feature] = p_train
@@ -313,6 +333,9 @@ def predict_user_items(id_preds, used_features, df_sample):
 
 
 df_train = get_data_training()
+
+#rename column headers to prevent lgbm breaking
+df_train = df_train.rename(columns = lambda x:re.sub('[^A-Za-z0-9_]+', '', x))
 
 for col in df_train.columns:
     print(col,"...",df_train[col].dtype)
