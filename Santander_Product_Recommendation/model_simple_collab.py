@@ -208,9 +208,7 @@ def predict_from_ensemble(x_train, y_train):
     model_rf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
     param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
     model_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
-    #lgb model
-    lgb_data = lgb.Dataset(x_train, label=y_train)
-    lgb_params = {'learning_rate': 0.001}
+    lgb_params = {'learning_rate': 0.01}
     model_lgb = lgb.LGBMClassifier(**lgb_params)
 
     #first level models
@@ -230,7 +228,7 @@ def predict_from_ensemble(x_train, y_train):
 
 
 def predict_from_lightgbm(x_train, y_train):
-    lgb_params = {'learning_rate': 0.001}
+    lgb_params = {'learning_rate': 0.01}
     model_lgb = lgb.LGBMClassifier(**lgb_params)
     model_lgb.fit(x_train, y_train)
     preds = model_lgb.predict_proba(x_train)
