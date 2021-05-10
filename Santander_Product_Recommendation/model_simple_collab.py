@@ -8,10 +8,13 @@ import pandas as pd
 import re
 from collections import defaultdict, Counter
 import zipfile
+import concurrent
+from concurrent import futures
 from sklearn import preprocessing
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import KFold
 import xgboost as xgb
 import lightgbm as lgb
 
@@ -52,7 +55,9 @@ item_cols = ['ncodpers', 'ind_ahor_fin_ult1', 'ind_aval_fin_ult1', 'ind_cco_fin_
            'ind_nomina_ult1', 'ind_nom_pens_ult1', 'ind_recibo_ult1']
 
 #user related features
-user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente", "renta", "antiguedad", "segmento", "indrel_1mes", "ind_empleado", "nomprov"]#, "conyuemp"]#,
+user_features = ["age", "ind_nuevo", "sexo", "tiprel_1mes", "ind_actividad_cliente",
+                 "renta", "antiguedad", "segmento", "indrel_1mes", "ind_empleado",
+                 "nomprov"]#, "conyuemp"]#,
 
 #feature weights
 feature_weights = {"age":1.0,
@@ -197,17 +202,82 @@ def get_data_training():
         df_train.fillna({"conyuemp": " "}, inplace=True)
         df_train = label_encode(df_train, "conyuemp", weight=feature_weights["conyuemp"])
 
-
     #for the rest fill missing values with 0
     df_train.fillna(0, inplace=True)
     return df_train
 
 
-def predict_from_ensemble(x_train, y_train):
+def predict_from_ensemble_cv(x_train, y_train):
+    #logistic regression model
     model_logit = LogisticRegression(max_iter=1000)
+    #random forest model
     model_rf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
+    #xgb model
     param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
     model_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
+    #lgb model
+    lgb_params = {'learning_rate': 0.01}
+    model_lgb = lgb.LGBMClassifier(**lgb_params)
+
+    #collect models to be used in ensemble process
+    models = []
+    # the first layer models
+    models.append(model_logit)
+    models.append(model_rf)
+    #models.append(lgb)
+
+    # the second layer model
+    models.append(model_xgb)
+    """
+    do a 5 fold cross validation on level-0 models,
+    use the output of each fold to train the last level model
+    """
+    ens_data = None
+    ens_labels = None
+    n_splits = 5
+    skf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    for fold_index, (train_index, test_index) in enumerate(skf.split(x_train, y_train)):
+        print("preparing cross validation folds")
+        x_train_fold = x_train.iloc[train_index].loc[:]
+        x_test_fold = x_train.iloc[test_index].loc[:]
+        y_train_fold = y_train.iloc[train_index].loc[:]
+        y_test_fold = y_train.iloc[test_index].loc[:]
+        # fit the models in current fold
+        preds = None
+        for modelindex, model in enumerate(models[:-1]):
+            print("fitting fold ", fold_index, " into model ",modelindex," of first layer")
+            model.fit(x_train_fold, y_train_fold)
+            if preds is None:
+                preds = model.predict_proba(x_test_fold)
+            else:
+                preds = np.concatenate((preds, model.predict_proba(x_test_fold)), axis=1)
+
+        if ens_data is None:
+            ens_data = preds
+        else:
+            ens_data = np.concatenate((ens_data, preds), axis=0)
+        if ens_labels is None:
+            ens_labels = y_test_fold
+        else:
+            ens_labels = np.concatenate((ens_labels, y_test_fold), axis=0)
+
+    # use the ensembled data to fit the final model
+    print("fitting CV data into finaly layer model")
+    models[-1:][0].fit(ens_data, ens_labels)
+    #now predict from the final layer model
+    preds = models[-1:][0].predict_proba(ens_data)
+    return preds
+
+
+def predict_from_ensemble(x_train, y_train):
+    #logistic regression model
+    model_logit = LogisticRegression(max_iter=1000)
+    #random forest model
+    model_rf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
+    #xgb model
+    param = {'max_depth': 2, 'eta': 1, 'objective': 'binary:logistic'}
+    model_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
+    #lgb model
     lgb_params = {'learning_rate': 0.01}
     model_lgb = lgb.LGBMClassifier(**lgb_params)
 
@@ -258,6 +328,46 @@ def predict_from_randomforest(x_train, y_train):
     clf.fit(x_train, y_train)
     preds = clf.predict_proba(x_train)
     return preds
+
+def predict_data(model_name, x_train, y_train):
+    if model_name=="xgb":
+        return predict_from_xgb(x_train, y_train)
+    elif model_name=="logistic":
+        return predict_from_logit(x_train, y_train)
+    elif model_name=="lgb":
+        return predict_from_lightgbm(x_train, y_train)
+    else:
+        return predict_from_randomforest(x_train, y_train)
+
+
+def parallelize_task(task_list, func_name, func_args, workers_count=10, workload=1):
+    """
+    run task in parallel
+    :param task_list: the list of tasks to operate on
+    :param func_name: the method to execute
+    :param func_args: dict with the name of fields and the type of value expected
+    :param workers_count: how many threads to use
+    :param workload: the workload for each thread
+    :return:
+    """
+    indices_list = np.arange(0, len(task_list), workload)
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers_count) as executor:
+        fetched_rows = {executor.submit(
+            func_name,
+            task_list[fromindex: fromindex + workload],
+            **func_args
+        ): fromindex for fromindex in indices_list}
+        for future in concurrent.futures.as_completed(fetched_rows):
+            row_data = fetched_rows[future]
+            #try:
+            data = future.result()
+            results.extend(data)
+            #except Exception as ex:
+            #    print("exception running parallel task ",func_name," for ", row_data, "...", ex)
+    return results
+
+
 
 
 def predict_feature_prob(ids):
