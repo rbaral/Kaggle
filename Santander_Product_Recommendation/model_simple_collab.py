@@ -14,6 +14,7 @@ from sklearn import preprocessing
 from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import KFold
 import xgboost as xgb
 import lightgbm as lgb
@@ -271,7 +272,7 @@ def predict_from_ensemble_cv(x_train, y_train):
 
 def predict_from_ensemble(x_train, y_train):
     #logistic regression model
-    model_logit = LogisticRegression(max_iter=1000)
+    model_logit = LogisticRegression(max_iter=1000, random_state=42)
     #random forest model
     model_rf = RandomForestClassifier(n_estimators=200, max_depth=100, random_state=42)
     #xgb model
@@ -279,19 +280,23 @@ def predict_from_ensemble(x_train, y_train):
     model_xgb = xgb.XGBClassifier(random_state=42, learning_rate=0.01, **param)
     #lgb model
     lgb_params = {'learning_rate': 0.01}
-    model_lgb = lgb.LGBMClassifier(**lgb_params)
+    model_lgb = lgb.LGBMClassifier(**lgb_params, random_state=42)
+    #gbm model
+    model_gb = GradientBoostingClassifier(learning_rate=0.01, random_state=42)
 
     #first level models
     model_logit.fit(x_train, y_train)
     model_rf.fit(x_train, y_train)
     model_lgb.fit(x_train, y_train)
+    model_gb.fit(x_train, y_train)
 
     preds_logit = model_logit.predict_proba(x_train)
     preds_rf = model_rf.predict_proba(x_train)
     preds_lgb = model_lgb.predict_proba(x_train)
+    preds_gbm = model_gb.predict_proba(x_train)
 
     # use xgb in second layer
-    ens_train = np.concatenate((preds_logit, preds_rf, preds_lgb), axis=1)
+    ens_train = np.concatenate((preds_logit, preds_rf, preds_lgb, preds_gbm), axis=1)
     model_xgb.fit(ens_train, y_train)
     preds = model_xgb.predict_proba(ens_train)
     return preds
@@ -302,6 +307,13 @@ def predict_from_lightgbm(x_train, y_train):
     model_lgb = lgb.LGBMClassifier(**lgb_params)
     model_lgb.fit(x_train, y_train)
     preds = model_lgb.predict_proba(x_train)
+    return preds
+
+
+def predict_from_gbm(x_train, y_train):
+    model_gb = GradientBoostingClassifier(learning_rate=0.01, random_state=42)
+    model_gb.fit(x_train, y_train)
+    preds = model_gb.predict_proba(x_train)
     return preds
 
 
